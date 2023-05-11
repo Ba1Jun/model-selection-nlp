@@ -145,7 +145,7 @@ class TransformerEmbeddings(Embeddings):
 		# load tokenizer
 		self._tok = transformers.AutoTokenizer.from_pretrained(lm_name, use_fast=True, add_prefix_space=True)
 		# load language model
-		self._lm = transformers.AutoModel.from_pretrained(lm_name, return_dict=True)
+		self._lm = transformers.AutoModel.from_pretrained(lm_name, return_dict=True, cache_dir="/home/baijun/workspace/models")
 		# sanity check: some models do not have a maximum input length
 		if self._tok.model_max_length != self._lm.config.max_position_embeddings:
 			max_length = self._lm.config.max_position_embeddings - 2  # 2 shorter for buffer (e.g. RoBERTa)
@@ -228,8 +228,8 @@ class TransformerEmbeddings(Embeddings):
 		return tok_sentences
 
 	def reduce(self, sentences, tok_sentences, emb_pieces):
-		emb_words = torch.zeros_like(emb_pieces)
-		att_words = torch.zeros(emb_pieces.shape[:-1], dtype=torch.bool, device=emb_pieces.device)
+		emb_words = torch.zeros_like(emb_pieces) # [batch_size, max_len, emb_dim]
+		att_words = torch.zeros(emb_pieces.shape[:-1], dtype=torch.bool, device=emb_pieces.device) # [batch_size, max_len]
 		max_len = 0
 		# iterate over sentences
 		for sidx in range(emb_pieces.shape[0]):

@@ -6,9 +6,14 @@ from datasets import load_dataset
 
 
 def get_dataset(args: argparse.Namespace) -> Tuple[List[str], List[str], List[str], List[str]]:
-	if args.dataset:
-		train = load_dataset(str(args.dataset), split="train")
-		test = load_dataset(str(args.dataset), split="test")
+
+	if args.train_path and args.test_path:
+		custom_dataset = load_dataset('csv', data_files={
+			'train': args.train_path,
+			'test': args.test_path
+		})
+		train = custom_dataset['train']
+		test = custom_dataset['test']
 		logging.debug(f"Dataset Info: {train}")
 
 		try:
@@ -17,14 +22,9 @@ def get_dataset(args: argparse.Namespace) -> Tuple[List[str], List[str], List[st
 		except (IndexError, KeyError):
 			logging.error(f"Cannot find indices for the text or labels. Please try again")
 			exit(1)
-
-	elif args.train_path and args.test_path:
-		custom_dataset = load_dataset('csv', data_files={
-			'train': args.train_path,
-			'test': args.test_path
-		})
-		train = custom_dataset['train']
-		test = custom_dataset['test']
+	elif args.dataset:
+		train = load_dataset(str(args.dataset), split="train")
+		test = load_dataset(str(args.dataset), split="test")
 		logging.debug(f"Dataset Info: {train}")
 
 		try:

@@ -2,3 +2,9 @@ __pycache__
 .DS_Store
 .idea
 venv
+.vscode
+models
+project/resources/
+project/src/utils/.ipynb_checkpoints/
+project/src/utils/corr_cal.ipynb
+project/src/utils/export_results.ipynb
