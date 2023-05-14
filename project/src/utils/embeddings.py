@@ -177,10 +177,13 @@ class TransformerEmbeddings(Embeddings):
 
 	def embed(self, sentences):
 		embeddings = []
-		emb_words, att_words = self.forward(sentences)
+		emb_words, attention_masks = self.forward(sentences)
+		sentence_lengths = torch.sum(attention_masks, dim=1).cpu().numpy().tolist()
 		# gather non-padding embeddings per sentence into list
 		for sidx in range(len(sentences)):
-			embeddings.append(emb_words[sidx, :len(sentences[sidx]), :].cpu().numpy())
+			embeddings.append(emb_words[sidx, :sentence_lengths[sidx], :].cpu().numpy())
+		# import pdb; pdb.set_trace()
+		
 		return embeddings
 
 	def forward(self, sentences):

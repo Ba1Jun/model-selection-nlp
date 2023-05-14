@@ -23,13 +23,10 @@ def transrate(Z, y, eps=1e-4):
 
 
 class TransRate(object):
-    def __init__(self, regression=False):
-        """
-            :param regression: whether regression
-        """
-        self.regression = regression
+    def __init__(self, args):
+        self.args = args
 
-    def fit(self, f: np.ndarray, y: np.ndarray):
+    def score(self, f: np.ndarray, y: np.ndarray):
         """
         :param f: [N, F], feature matrix from pre-trained model
         :param y: target labels.
@@ -37,23 +34,5 @@ class TransRate(object):
             For regression, y has shape [N, C] with C regression-labels
         :return: TransRate score (how well f can fit y directly)
         """
-        f = f.astype(np.float64)
-        if self.regression:
-            y = y.astype(np.float64)
-            if len(y.shape) == 1:
-                y = y.reshape(-1, 1)
         
         return transrate(f, y)
-
-    def predict(self, f: np.ndarray):
-        """
-        :param f: [N, F], feature matrix
-        :return: prediction, return shape [N, X]
-        """
-        if not self.fitted:
-            raise RuntimeError("not fitted, please call fit first")
-        f = f.astype(np.float64)
-        logits = f @ self.ms.T
-        if self.regression:
-            return logits
-        return np.argmax(logits, axis=-1)

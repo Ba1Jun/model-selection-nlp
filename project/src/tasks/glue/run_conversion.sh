@@ -6,5 +6,5 @@ SEPS=( "[SEP]" "</s>" )
 
 for sep_idx in "${!SEPS[@]}"; do
   mkdir -p ${DATA_PATHS[$sep_idx]}
-  python project/src/tasks/glue/convert.py $TASKS ${DATA_PATHS[$sep_idx]} -s "${SEP[$sep_idx]}"
+  python project/src/tasks/glue/convert.py -tasks $TASKS -output_path ${DATA_PATHS[$sep_idx]} -sep_token ${SEPS[$sep_idx]}
 done

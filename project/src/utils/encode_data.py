@@ -30,13 +30,15 @@ def encode_dataset(dataset: LabelledDataset, args: argparse.Namespace) -> Tuple[
         assert len(dataset) >= pca_model.n_components, \
             f"[Error] Not enough data to perform PCA ({len(dataset)} < {pca_model.n_components})."
         logging.info(f"Using PCA model with {pca_model.n_components} components.")
+
     # set pooling function for sentence labeling tasks
-    if args.pooling:
-        pooling_function = load_pooling_function(args.pooling)
-        logging.info(f"Using pooling function '{args.pooling}' (sentence classification only).")
-    else:
+    if args.task == 'token_classification':
         pooling_function = lambda x: x # return identity
         logging.info(f"Using all token-level embeddings (no pooling).")
+    else:
+        pooling_function = load_pooling_function(args.pooling)
+        logging.info(f"Using pooling function '{args.pooling}' (sentence classification only).")
+        
 
     # set up output embedding and label stores
     embeddings = np.zeros((len(dataset), embedding_model.emb_dim))

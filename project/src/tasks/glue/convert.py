@@ -7,14 +7,16 @@ from datasets import load_dataset
 
 def parse_arguments():
 	arg_parser = argparse.ArgumentParser(description='GLUE - Dataset Conversion')
-	arg_parser.add_argument('tasks', nargs='+', help='list of GLUE tasks to convert')
-	arg_parser.add_argument('output_path', help='output prefix for corpus in HuggingFace Datasets CSV format')
-	arg_parser.add_argument('-s', '--sep_token', default=' ', help='separator token to use for multi-sentence tasks')
+	arg_parser.add_argument('-tasks', nargs='+', help='list of GLUE tasks to convert')
+	arg_parser.add_argument('-output_path', help='output prefix for corpus in HuggingFace Datasets CSV format')
+	arg_parser.add_argument('-sep_token', default=' ', help='separator token to use for multi-sentence tasks')
 	return arg_parser.parse_args()
 
 
 def main():
 	args = parse_arguments()
+
+	print(args)
 
 	# load GLUE subtask from HF Datasets
 	lbl_idx_map = {'unknown': -1}

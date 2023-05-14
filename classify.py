@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 from collections import defaultdict
 
 import numpy as np
@@ -35,6 +36,7 @@ def parse_arguments():
     arg_parser.add_argument('-pl', '--pooling', help='pooling strategy for sentence classification (default: None)')
     arg_parser.add_argument('-et', '--embedding_tuning', action='store_true', default=False,
                             help='set flag to tune the full model including embeddings (default: False)')
+    arg_parser.add_argument('--train_type', type=str, help='frozen or tuned')
 
     # classifier setup
     arg_parser.add_argument('--classifier', required=True, help='classifier identifier')
@@ -46,6 +48,7 @@ def parse_arguments():
     arg_parser.add_argument('-e', '--epochs', type=int, default=50, help='maximum number of epochs (default: 50)')
     arg_parser.add_argument('-es', '--early_stop', type=int, default=3,
                             help='maximum number of epochs without improvement (default: 3)')
+    arg_parser.add_argument('-er', '--earlystop_ratio', type=float, default=1, help='maximum ratio of epochs')
     arg_parser.add_argument('-bs', '--batch_size', type=int, default=32,
                             help='maximum number of sentences per batch (default: 32)')
     arg_parser.add_argument('-lr', '--learning_rate', type=float, default=1e-3, help='learning rate (default: 1e-3)')
@@ -62,7 +65,7 @@ def setup_experiment(out_path, prediction=False):
 
         # if output dir does not exist, create it (new experiment)
         print(f"Path '{out_path}' does not exist. Creating...")
-        os.mkdir(out_path)
+        os.makedirs(out_path)
     # if output dir exist, check if predicting
     else:
         # if not predicting, verify overwrite
@@ -83,7 +86,7 @@ def setup_experiment(out_path, prediction=False):
     logger.addHandler(logging.StreamHandler(sys.stdout))
 
 
-def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', return_predictions=False):
+def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', return_predictions=False, earlystop_ratio=1):
     stats = defaultdict(list)
 
     # set model to training mode
@@ -122,10 +125,10 @@ def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', ret
                 loss = criterion(predictions['flat_logits'], labels)
 
         # calculate accuracy
-        accuracy = criterion.get_accuracy(predictions['flat_logits'].detach(), labels)
+        accuracy = criterion.get_accuracy(predictions['flat_logits'].detach().cpu(), labels)
 
         # store statistics
-        stats['loss'].append(float(loss.detach()))
+        stats['loss'].append(float(loss.detach().cpu().item()))
         stats['accuracy'].append(float(accuracy))
 
         # store predictions
@@ -144,14 +147,26 @@ def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', ret
                 )
         sys.stdout.flush()
 
+        if earlystop_ratio < 1 and (pct_complete / 100) >= earlystop_ratio:
+            # logging.info(f"Early stopping training completed.")
+            break
+
     # clear line
-    print("\r", end='')
+    # print("\r", end='')
 
     return stats
 
 
 def main():
     args = parse_arguments()
+
+    start_time = time.time()
+    running_time_file = f"{args.exp_path}/running_time.txt"
+
+    
+
+    if args.train_type == 'tuned':
+        args.embedding_tuning = True
 
     # setup experiment directory and logging
     setup_experiment(args.exp_path, prediction=args.prediction_only)
@@ -233,6 +248,13 @@ def main():
         pred_data.save(pred_path)
         logging.info(f"Prediction completed with Acc: {np.mean(stats['accuracy']):.4f}, Loss: {np.mean(stats['loss']):.4f} (mean over batches).")
         logging.info(f"Saved results from {pred_data} to '{pred_path}'. Exiting.")
+
+        end_time = time.time()
+        running_time = end_time - start_time
+        
+        with open(running_time_file, "a") as f:
+            f.write(f"validation time: {round(running_time, 4)}s\n")
+
         exit()
 
     # setup optimizer
@@ -244,7 +266,7 @@ def main():
     for ep_idx in range(args.epochs):
         # iterate over training batches and update classifier weights
         ep_stats = run(
-                classifier, criterion, optimizer, train_data, args.batch_size, mode='train'
+                classifier, criterion, optimizer, train_data, args.batch_size, mode='train', earlystop_ratio=args.earlystop_ratio
                 )
         # print statistics
         logging.info(
@@ -267,9 +289,9 @@ def main():
         cur_eval_loss = stats['loss'][-1]
 
         # save most recent model
-        path = os.path.join(args.exp_path, 'newest.pt')
-        classifier.save(path)
-        logging.info(f"Saved model from epoch {ep_idx + 1} to '{path}'.")
+        # path = os.path.join(args.exp_path, 'newest.pt')
+        # classifier.save(path)
+        # logging.info(f"Saved model from epoch {ep_idx + 1} to '{path}'.")
 
         # save best model
         if cur_eval_loss <= min(stats['loss']):
@@ -283,6 +305,12 @@ def main():
             break
 
     logging.info(f"Training completed after {ep_idx + 1} epochs.")
+
+    end_time = time.time()
+    running_time = end_time - start_time
+    
+    with open(running_time_file, "a") as f:
+        f.write(f"training time: {round(running_time, 4)}s\n")
 
 
 if __name__ == '__main__':

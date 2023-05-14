@@ -1,13 +1,18 @@
+import warnings
+warnings.filterwarnings("ignore")
 import argparse
 import logging
 from typing import List, Tuple
 
 from datasets import load_dataset
 
+import sys
+sys.path.append("/home/baijun/workspace/project/model_selection_nlp")
+
 
 def get_dataset(args: argparse.Namespace) -> Tuple[List[str], List[str], List[str], List[str]]:
 
-	if args.train_path and args.test_path:
+	if hasattr(args, 'train_path') and args.train_path and args.test_path:
 		custom_dataset = load_dataset('csv', data_files={
 			'train': args.train_path,
 			'test': args.test_path
@@ -23,8 +28,8 @@ def get_dataset(args: argparse.Namespace) -> Tuple[List[str], List[str], List[st
 			logging.error(f"Cannot find indices for the text or labels. Please try again")
 			exit(1)
 	elif args.dataset:
-		train = load_dataset(str(args.dataset), split="train")
-		test = load_dataset(str(args.dataset), split="test")
+		train = load_dataset(str(args.dataset), split="train", cache_dir='project/resources/data/')
+		test = load_dataset(str(args.dataset), split="test", cache_dir='project/resources/data/')
 		logging.debug(f"Dataset Info: {train}")
 
 		try:
@@ -38,17 +43,15 @@ def get_dataset(args: argparse.Namespace) -> Tuple[List[str], List[str], List[st
 		exit(1)
 
 	# split pre-tokenized data on space
-	if args.task == 'token_classification':
+	if hasattr(args, 'task') and args.task == 'token_classification':
 		for xidx, text_train in enumerate(X_train):
 			X_train[xidx] = text_train.split(' ')
 		for xidx, text_test in enumerate(X_test):
 			X_test[xidx] = text_test.split(' ')
 
-	for yidx, label_train in enumerate(y_train):
-		if args.task == 'token_classification':
+		for yidx, label_train in enumerate(y_train):
 			y_train[yidx] = [int(lbl) for lbl in label_train.split(' ')]
-	for yidx, label_test in enumerate(y_test):
-		if args.task == 'token_classification':
+		for yidx, label_test in enumerate(y_test):
 			y_test[yidx] = [int(lbl) for lbl in label_test.split(' ')]
 
 	return X_train, y_train, X_test, y_test

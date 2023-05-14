@@ -1,8 +1,9 @@
 #!/usr/bin/python3
-
+import warnings
+warnings.filterwarnings("ignore")
 import argparse
 import logging
-import sys
+import time
 import os
 import torch
 
@@ -17,8 +18,14 @@ from project.src.utils.load_data import get_dataset
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 
+LEARNING_METHODS = ['kNN', 'Logistic']
+
+
 def main(args: argparse.Namespace):
     # load dataset from HF or custom
+    start_time = time.time()
+    is_encoding = False
+
     X_train, y_train, X_val, y_val = get_dataset(args)
 
     # create LabelledDataset object
@@ -32,11 +39,14 @@ def main(args: argparse.Namespace):
         train_embeddings, train_labels = torch.load(encoded_train_dataset_file)
         logging.info(f"Loaded encoded {args.dataset} train from {encoded_train_dataset_file}.")
     else:
+        is_encoding = True
         train_embeddings, train_labels = encode_dataset(train_dataset, args)
         torch.save([train_embeddings, train_labels], encoded_train_dataset_file)
         logging.info(f"Encoded {args.dataset} train saved to {encoded_train_dataset_file}.")
     
-    if args.method in ["kNN", "Logistic"]:
+    # import pdb; pdb.set_trace()
+    
+    if args.method in LEARNING_METHODS:
         val_dataset = LabelledDataset(inputs=X_val, labels=y_val)
         logging.info(f"Loaded {args.dataset} val {val_dataset}.")
 
@@ -49,10 +59,22 @@ def main(args: argparse.Namespace):
             torch.save([val_embeddings, val_labels], encoded_val_dataset_file)
             logging.info(f"Encoded {args.dataset} val saved to {encoded_val_dataset_file}.")
     
+    end_time = time.time()
+    encoding_time = end_time - start_time
+    if is_encoding:
+        logging.info(f"{encoder}-{args.pooling} | encoding_time: {round(encoding_time, 4)}s")
+        encoding_time_file = f"{args.output_path}/encoded_dataset/encoding_time_{args.pooling}.txt"
+        with open(encoding_time_file, "a") as f:
+            f.write(f"{args.dataset} | {encoder}-{args.pooling} | encoding_time: {round(encoding_time, 4)}s\n")
+        
+
+
+    # import pdb; pdb.set_trace()
+
     if args.method == "kNN":
         from project.src.methods.knn import kNN as TransMetric
     elif args.method == "Logistic":
-        from project.src.methods.knn import kNN as TransMetric
+        from project.src.methods.logistic import Logistic as TransMetric
     elif args.method == "NLEEP":
         from project.src.methods.nleep import NLEEP as TransMetric
     elif args.method == "HScore":
@@ -71,19 +93,27 @@ def main(args: argparse.Namespace):
         from project.src.methods.gbc import GBC as TransMetric
     elif args.method == "TransRate":
         from project.src.methods.transrate import TransRate as TransMetric
+    elif args.method == "SFDA":
+        from project.src.methods.sfda import SFDA as TransMetric
 
-    metric = TransMetric(regression=False)
 
-    if args.method in ["kNN", "Logistic"]:
-        score = metric.fit(train_embeddings, train_labels, val_embeddings, val_labels)
+    start_time = time.time()
+    metric = TransMetric(args)
+
+    if args.method in LEARNING_METHODS:
+        score = metric.score(train_embeddings, train_labels, val_embeddings, val_labels)
     else:
-        score = metric.fit(train_embeddings, train_labels)
+        score = metric.score(train_embeddings, train_labels)
     
-    logging.info(f"{args.method}: {score}")
+    end_time = time.time()
+    score_time = end_time - start_time
+
+
+    logging.info(f"{args.method}: {score}, score time: {round(score_time, 4)}s")
 
     results_file = f"{args.output_path}/results/{args.method}_{args.pooling}.txt"
     with open(results_file, "a") as f:
-        f.write(f"{encoder}-{args.pooling} | {args.dataset} | {args.method}: {round(score, 4)}\n")
+        f.write(f"{args.dataset} | {encoder}-{args.pooling} | {args.method}: {score} | score_time: {round(score_time, 4)}s\n")
 
 
 if __name__ == '__main__':

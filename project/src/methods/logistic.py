@@ -1,16 +1,12 @@
-import warnings
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
 
 class Logistic(object):
-    def __init__(self, regression=False):
-        """
-            :param regression: whether regression
-        """
-        self.regression = regression
+    def __init__(self, args):
+        self.args = args
 
-    def fit(self, train_features: np.ndarray, train_labels: np.ndarray,
+    def score(self, train_features: np.ndarray, train_labels: np.ndarray,
                   val_features: np.ndarray, val_labels: np.ndarray):
         """
         :param f: [N, F], feature matrix from pre-trained model
@@ -19,19 +15,12 @@ class Logistic(object):
             For regression, y has shape [N, C] with C regression-labels
         :return: TransRate score (how well f can fit y directly)
         """
-
-        model = LogisticRegression(random_state=42, multi_class='multinomial', solver='lbfgs').fit(train_features, train_labels)
+        # score = 0.
+        # seeds = [0, 42, 123, 1117, 12345]
+        # for seed in seeds:
+        #     print(f'logistic training: {seed}')
+        #     model = LogisticRegression(random_state=seed, multi_class='multinomial', solver='lbfgs').fit(train_features, train_labels)
+        #     score += (model.predict(val_features) == val_labels).mean()
+        # return score / len(seeds)
+        model = LogisticRegression(random_state=self.args.seed, multi_class='multinomial', solver='lbfgs').fit(train_features, train_labels)
         return (model.predict(val_features) == val_labels).mean()
-
-    def predict(self, f: np.ndarray):
-        """
-        :param f: [N, F], feature matrix
-        :return: prediction, return shape [N, X]
-        """
-        if not self.fitted:
-            raise RuntimeError("not fitted, please call fit first")
-        f = f.astype(np.float64)
-        logits = f @ self.ms.T
-        if self.regression:
-            return logits
-        return np.argmax(logits, axis=-1)

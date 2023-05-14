@@ -1,11 +1,9 @@
 import warnings
 
 import numpy as np
-from numba import njit
 
 # copy from https://github.com/thuml/LogME/blob/main/LogME.py
 
-@njit
 def each_evidence(y_, f, fh, v, s, vh, N, D):
     """
     compute the maximum evidence for each class
@@ -45,7 +43,6 @@ f_tmp = np.random.randn(20, 50).astype(np.float64)
 each_evidence(np.random.randint(0, 2, 50).astype(np.float64), f_tmp, f_tmp.transpose(), np.eye(20, dtype=np.float64), np.ones(20, dtype=np.float64), np.eye(20, dtype=np.float64), 50, 20)
 
 
-@njit
 def truncated_svd(x):
     u, s, vh = np.linalg.svd(x.transpose() @ x)
     s = np.sqrt(s)
@@ -60,10 +57,11 @@ truncated_svd(np.random.randn(20, 10).astype(np.float64))
 
 
 class LogME(object):
-    def __init__(self, regression=False):
+    def __init__(self, args, regression=False):
         """
             :param regression: whether regression
         """
+        self.args = args
         self.regression = regression
         self.fitted = False
         self.reset()
@@ -160,7 +158,7 @@ class LogME(object):
 
     _fit = _fit_fixed_point
 
-    def fit(self, f: np.ndarray, y: np.ndarray):
+    def score(self, f: np.ndarray, y: np.ndarray):
         """
         :param f: [N, F], feature matrix from pre-trained model
         :param y: target labels.

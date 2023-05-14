@@ -1,10 +1,12 @@
 #!/bin/bash
 
 DATA_PATH=project/resources/data/glue
-EXP_PATH=project/resources/output/glue
+EXP_PATH=project/resources/output/
 TASKS=( "rte" )
-# ENCODERS=( "bert-base-uncased" "roberta-base" "distilbert-base-uncased" "emilyalsentzer/Bio_ClinicalBERT" "dmis-lab/biobert-v1.1" "cardiffnlp/twitter-roberta-base" "allenai/scibert_scivocab_uncased" )
-ENCODERS=( "bert-base-uncased" "roberta-base" )
+ENCODERS=( "bert-base-uncased" "roberta-base" "distilbert-base-uncased" "emilyalsentzer/Bio_ClinicalBERT" "dmis-lab/biobert-v1.1" "cardiffnlp/twitter-roberta-base" "allenai/scibert_scivocab_uncased" )
+# ENCODERS=( "distilbert-base-uncased" )
+EPOCHS=3
+TRAIN_TYPE=frozen
 
 EMB_TYPES=( "transformer+cls" "transformer" )
 POOLINGS=( "first" "mean" )
@@ -43,13 +45,10 @@ for rsd_idx in "${!SEEDS[@]}"; do
           valid_paths=( $data_dir/$task-validation_matched.csv $data_dir/$task-validation_mismatched.csv )
         fi
 
-        # check if task directory exists
-        if [ ! -d "$EXP_PATH/$task" ]; then
-          mkdir $EXP_PATH/$task
-        fi
-        exp_dir=$EXP_PATH/$task/model${enc_idx}-${pooling}-${CLASSIFIER}-rs${SEEDS[$rsd_idx]}
+        mkdir -p $EXP_PATH/$task/earlystopping-${EPOCHS}/$TRAIN_TYPE
+        exp_dir=$EXP_PATH/$task/earlystopping-${EPOCHS}/$TRAIN_TYPE/model${enc_idx}-${pooling}-${CLASSIFIER}-rs${SEEDS[$rsd_idx]}
         # check if experiment already exists
-        if [ -f "$exp_dir/best.pt" ]; then
+        if [ -f "$exp_dir/classify.log" ]; then
           echo "[Warning] Experiment '$exp_dir' already exists. Not retraining."
         # if experiment is new, train classifier
         else
@@ -60,6 +59,8 @@ for rsd_idx in "${!SEEDS[@]}"; do
             --train_path ${train_path} \
             --test_path ${valid_paths[0]} \
             --exp_path ${exp_dir} \
+            --train_type ${TRAIN_TYPE} \
+            --epochs ${EPOCHS} \
             --embedding_model ${encoder} \
             --pooling ${pooling} \
             --classifier ${CLASSIFIER} \
@@ -85,6 +86,7 @@ for rsd_idx in "${!SEEDS[@]}"; do
             --task "sequence_classification" \
             --train_path ${train_path} \
             --test_path ${valid_path} \
+            --train_type ${TRAIN_TYPE} \
             --exp_path ${exp_dir} \
             --embedding_model ${encoder} \
             --pooling ${pooling} \
@@ -98,6 +100,9 @@ for rsd_idx in "${!SEEDS[@]}"; do
             --pred_path ${pred_path} \
             --out_path ${exp_dir}
           (( num_exp++ ))
+
+
+        rm -rf ${exp_dir}/best.pt
 
         done
         echo

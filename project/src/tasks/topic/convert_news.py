@@ -8,7 +8,7 @@ import sys
 import numpy as np
 import transformers
 
-sys.path.append("/../../logme-frame")
+sys.path.append("/home/baijun/workspace/project/model_selection_nlp")
 from project.src.utils.load_data import get_dataset
 
 
@@ -115,7 +115,7 @@ def main():
 
     # write splits to files
     for split, lines in splits.items():
-        split_path = args.output_path + f'-{split}.csv'
+        split_path = args.output_path + f'/{split}.csv'
         with open(split_path, 'w', encoding='utf8', newline='') as output_file:
             csv_writer = csv.writer(output_file, quoting=csv.QUOTE_ALL)
             csv_writer.writerow(['text', 'label'])
