@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DATA_PATHS=( project/resources/data/glue/bert project/resources/data/glue/roberta )
-TASKS="mnli qnli rte"
+TASKS="stsb"
 SEPS=( "[SEP]" "</s>" )
 
 for sep_idx in "${!SEPS[@]}"; do

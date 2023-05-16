@@ -176,6 +176,8 @@ class SFDA(object):
         # soften the probability using softmax for meaningful confidential mixture
         prob = np.exp(prob) / np.exp(prob).sum(axis=1, keepdims=True) 
         means, means_ = _class_means(X, y)  # class means, outer classes means
+
+        # print(means_)
         
         # ConfMix
         for y_ in range(num_classes):

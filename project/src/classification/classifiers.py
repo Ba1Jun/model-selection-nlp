@@ -110,7 +110,7 @@ class EmbeddingClassifier(nn.Module):
 		labels = self.get_labels(logits.detach())
 
 		results = {
-			'labels': labels,
+			'pred_labels': labels,
 			'logits': logits,
 			'flat_logits': flat_logits
 		}

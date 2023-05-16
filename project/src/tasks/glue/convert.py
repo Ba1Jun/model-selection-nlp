@@ -29,6 +29,7 @@ def main():
 
 			# extract labels
 			labels = glue_data[split]['label']
+			import pdb; pdb.set_trace()
 			lbl_idx_map.update({lbl: idx for idx, lbl in enumerate(glue_data[split].features['label'].names)})
 
 			# check for single-sentence tasks (i.e., label is second column)

@@ -5,15 +5,26 @@ import logging
 import os
 import sys
 import time
-from collections import defaultdict
-
+import random
+import jsonlines
 import numpy as np
 import torch
+from collections import defaultdict
+from sklearn.metrics import accuracy_score, matthews_corrcoef
+
 from project.src.classification import load_classifier
 from project.src.utils.data import LabelledDataset
-from project.src.utils.embeddings import load_embeddings, load_pooling_function
+from project.src.utils.embeddings import load_embeddings, load_pooling_function, TransformerEmbeddings
 # local imports
 from project.src.utils.load_data import get_dataset
+
+
+GLOBAL_STEPS = 0
+FEW_SHOT_DONE = False
+
+log_format = '%(message)s'
+log_level = logging.INFO
+logging.basicConfig(format=log_format, level=log_level)
 
 
 def parse_arguments():
@@ -32,61 +43,33 @@ def parse_arguments():
     arg_parser.add_argument('--label_column', default='label', help='column containing gold labels')
 
     # embedding model setup
-    arg_parser.add_argument('--embedding_model', required=True, help='embedding model identifier')
+    arg_parser.add_argument('--lm_name', type=str, nargs='?', help='pretrained language model identifier')
+    # arg_parser.add_argument('--embedding_model', required=True, help='embedding model identifier')
     arg_parser.add_argument('-pl', '--pooling', help='pooling strategy for sentence classification (default: None)')
     arg_parser.add_argument('-et', '--embedding_tuning', action='store_true', default=False,
                             help='set flag to tune the full model including embeddings (default: False)')
-    arg_parser.add_argument('--train_type', type=str, help='frozen or tuned')
-
+    
     # classifier setup
     arg_parser.add_argument('--classifier', required=True, help='classifier identifier')
     arg_parser.add_argument('-po', '--prediction_only', action='store_true', default=False,
                             help='set flag to run prediction on the validation data and exit (default: False)')
 
     # experiment setup
-    arg_parser.add_argument('--exp_path', required=True, help='path to experiment directory')
+    arg_parser.add_argument('--method', type=str, nargs='?', help='Model selection method.')
+    arg_parser.add_argument('--output_path', type=str, nargs='?', help='Path to the output files.')
     arg_parser.add_argument('-e', '--epochs', type=int, default=50, help='maximum number of epochs (default: 50)')
     arg_parser.add_argument('-es', '--early_stop', type=int, default=3,
                             help='maximum number of epochs without improvement (default: 3)')
-    arg_parser.add_argument('-er', '--earlystop_ratio', type=float, default=1, help='maximum ratio of epochs')
+    arg_parser.add_argument('--few_shot_steps', type=int, default=0, help='maximum steps of few-shot training')
     arg_parser.add_argument('-bs', '--batch_size', type=int, default=32,
                             help='maximum number of sentences per batch (default: 32)')
     arg_parser.add_argument('-lr', '--learning_rate', type=float, default=1e-3, help='learning rate (default: 1e-3)')
-    arg_parser.add_argument('-rs', '--seed', type=int, help='seed for probabilistic components (default: None)')
+    arg_parser.add_argument('--seeds', nargs='+', help='list of random seeds')
 
     return arg_parser.parse_args()
 
 
-def setup_experiment(out_path, prediction=False):
-    if not os.path.exists(out_path):
-        if prediction:
-            print(f"Experiment path '{out_path}' does not exist. Cannot run prediction. Exiting.")
-            exit(1)
-
-        # if output dir does not exist, create it (new experiment)
-        print(f"Path '{out_path}' does not exist. Creating...")
-        os.makedirs(out_path)
-    # if output dir exist, check if predicting
-    else:
-        # if not predicting, verify overwrite
-        if not prediction:
-            response = None
-
-            while response not in ['y', 'n']:
-                response = input(f"Path '{out_path}' already exists. Overwrite? [y/n] ")
-            if response == 'n':
-                exit(1)
-
-    # setup logging
-    log_format = '%(message)s'
-    log_level = logging.INFO
-    logging.basicConfig(filename=os.path.join(out_path, 'classify.log'), filemode='a', format=log_format,
-                        level=log_level)
-    logger = logging.getLogger()
-    logger.addHandler(logging.StreamHandler(sys.stdout))
-
-
-def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', return_predictions=False, earlystop_ratio=1):
+def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', return_predictions=False, few_shot_steps=0):
     stats = defaultdict(list)
 
     # set model to training mode
@@ -97,6 +80,11 @@ def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', ret
     elif mode == 'eval':
         classifier.eval()
         batch_generator = dataset.get_batches
+
+    global GLOBAL_STEPS
+    global FEW_SHOT_DONE
+    all_pred_labels = []
+    all_true_labels = []
 
     # iterate over batches
     for bidx, batch_data in enumerate(batch_generator(batch_size)):
@@ -116,6 +104,9 @@ def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', ret
             loss.backward()
             optimizer.step()
 
+            # record global steps
+            GLOBAL_STEPS += 1
+
         # when evaluating, perform forward pass without gradients
         elif mode == 'eval':
             with torch.no_grad():
@@ -125,11 +116,12 @@ def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', ret
                 loss = criterion(predictions['flat_logits'], labels)
 
         # calculate accuracy
-        accuracy = criterion.get_accuracy(predictions['flat_logits'].detach().cpu(), labels)
+        all_pred_labels.append(predictions['pred_labels'].detach().cpu().numpy())
+        all_true_labels.append(labels)
+        cur_acc = accuracy_score(np.concatenate(all_true_labels, 0), np.concatenate(all_pred_labels, 0))
 
         # store statistics
         stats['loss'].append(float(loss.detach().cpu().item()))
-        stats['accuracy'].append(float(accuracy))
 
         # store predictions
         if return_predictions:
@@ -143,16 +135,22 @@ def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', ret
         pct_complete = (1 - (num_remaining / len(dataset._inputs))) * 100
         sys.stdout.write(
                 f"\r[{mode.capitalize()} | Batch {bidx + 1} | {pct_complete:.2f}%] "
-                f"Acc: {np.mean(stats['accuracy']):.4f}, Loss: {np.mean(stats['loss']):.4f}"
+                f"Acc: {cur_acc:.4f}, Loss: {np.mean(stats['loss']):.4f}"
                 )
         sys.stdout.flush()
 
-        if earlystop_ratio < 1 and (pct_complete / 100) >= earlystop_ratio:
-            # logging.info(f"Early stopping training completed.")
+        if few_shot_steps != 0 and few_shot_steps == GLOBAL_STEPS:
+            logging.info("")
+            logging.info(f"Few-shot training completed at {GLOBAL_STEPS} steps.")
+            FEW_SHOT_DONE = True
             break
-
-    # clear line
-    # print("\r", end='')
+    
+    all_pred_labels = np.concatenate(all_pred_labels, 0)
+    all_true_labels = np.concatenate(all_true_labels, 0)
+    
+    stats['acc'] = accuracy_score(all_true_labels, all_pred_labels)
+    stats['mcc'] = matthews_corrcoef(all_true_labels, all_pred_labels)
+    stats['loss'] = np.mean(stats['loss'])
 
     return stats
 
@@ -160,63 +158,9 @@ def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', ret
 def main():
     args = parse_arguments()
 
-    start_time = time.time()
-    running_time_file = f"{args.exp_path}/running_time.txt"
-
-    
-
-    if args.train_type == 'tuned':
-        args.embedding_tuning = True
-
-    # setup experiment directory and logging
-    setup_experiment(args.exp_path, prediction=args.prediction_only)
-
-    if args.prediction_only: logging.info(f"Running in prediction mode (no training).")
-
-    # set random seeds
-    if args.seed is not None:
-        np.random.seed(args.seed)
-        torch.random.manual_seed(args.seed)
-
-    # TODO HuggingFace Datasets integration
-    train_sentences, train_labels, valid_sentences, valid_labels = get_dataset(args)
-
-    # setup data
-    train_data = LabelledDataset(inputs=train_sentences, labels=train_labels)
-    logging.info(f"Loaded {train_data} (train).")
-    valid_data = LabelledDataset(inputs=valid_sentences, labels=valid_labels)
-    logging.info(f"Loaded {valid_data} (dev).")
-    # gather labels
-    if set(train_data.get_label_types()) < set(valid_data.get_label_types()):
-        logging.warning(f"[Warning] Validation data contains labels unseen in the training data.")
-    label_types = sorted(set(train_data.get_label_types()) | set(valid_data.get_label_types()))
-
-    # load embedding model
-    embedding_model = load_embeddings(
-            args.embedding_model,
-            tokenized=(args.task == 'token_classification'),
-            static=(not args.embedding_tuning),
-            special_tokens=args.special_tokens
-            )
-    logging.info(f"Loaded {embedding_model}.")
-
-    # load pooling function for sentence labeling tasks
-    pooling_function = None
-    if args.pooling is not None:
-        pooling_function = load_pooling_function(args.pooling)
-        logging.info(f"Applying pooling function '{args.pooling}' to token embeddings.")
-
-    # load classifier and loss constructors based on identifier
-    classifier_constructor, loss_constructor = load_classifier(args.classifier)
-
-    # setup classifier
-    classifier = classifier_constructor(
-            emb_model=embedding_model, emb_pooling=pooling_function, emb_tuning=args.embedding_tuning,
-            classes=label_types
-            )
-    logging.info(f"Using classifier:\n{classifier}")
     # load pre-trained model for prediction
     if args.prediction_only:
+        logging.info(f"Running in prediction mode (no training).")
         classifier_path = os.path.join(args.exp_path, 'best.pt')
         if not os.path.exists(classifier_path):
             logging.error(f"[Error] No pre-trained model available in '{classifier_path}'. Exiting.")
@@ -227,12 +171,6 @@ def main():
         )
         logging.info(f"Loaded pre-trained classifier from '{classifier_path}'.")
 
-    # setup loss
-    criterion = loss_constructor(label_types)
-    logging.info(f"Using criterion {criterion}.")
-
-    # main prediction call (when only predicting on validation data w/o training)
-    if args.prediction_only:
         stats = run(
             classifier, criterion, None, valid_data,
             args.batch_size, mode='eval', return_predictions=True
@@ -249,68 +187,140 @@ def main():
         logging.info(f"Prediction completed with Acc: {np.mean(stats['accuracy']):.4f}, Loss: {np.mean(stats['loss']):.4f} (mean over batches).")
         logging.info(f"Saved results from {pred_data} to '{pred_path}'. Exiting.")
 
-        end_time = time.time()
-        running_time = end_time - start_time
-        
-        with open(running_time_file, "a") as f:
-            f.write(f"validation time: {round(running_time, 4)}s\n")
-
         exit()
-
-    # setup optimizer
-    optimizer = torch.optim.AdamW(params=classifier.get_trainable_parameters(), lr=args.learning_rate)
-    logging.info(f"Optimizing using {optimizer.__class__.__name__} with learning rate {args.learning_rate}.")
-
-    # main loop
-    stats = defaultdict(list)
-    for ep_idx in range(args.epochs):
-        # iterate over training batches and update classifier weights
-        ep_stats = run(
-                classifier, criterion, optimizer, train_data, args.batch_size, mode='train', earlystop_ratio=args.earlystop_ratio
-                )
-        # print statistics
-        logging.info(
-                f"[Epoch {ep_idx + 1}/{args.epochs}] Train completed with "
-                f"Acc: {np.mean(ep_stats['accuracy']):.4f}, Loss: {np.mean(ep_stats['loss']):.4f}"
-                )
-
-        # iterate over batches in dev split
-        ep_stats = run(
-                classifier, criterion, None, valid_data, args.batch_size, mode='eval'
-                )
-
-        # store and print statistics
-        for stat in ep_stats:
-            stats[stat].append(np.mean(ep_stats[stat]))
-        logging.info(
-                f"[Epoch {ep_idx + 1}/{args.epochs}] Validation completed with "
-                f"Acc: {stats['accuracy'][-1]:.4f}, Loss: {stats['loss'][-1]:.4f}"
-                )
-        cur_eval_loss = stats['loss'][-1]
-
-        # save most recent model
-        # path = os.path.join(args.exp_path, 'newest.pt')
-        # classifier.save(path)
-        # logging.info(f"Saved model from epoch {ep_idx + 1} to '{path}'.")
-
-        # save best model
-        if cur_eval_loss <= min(stats['loss']):
-            path = os.path.join(args.exp_path, 'best.pt')
-            classifier.save(path)
-            logging.info(f"Saved model with best loss {cur_eval_loss:.4f} to '{path}'.")
-
-        # check for early stopping
-        if (ep_idx - stats['loss'].index(min(stats['loss']))) >= args.early_stop:
-            logging.info(f"No improvement since {args.early_stop} epochs ({min(stats['loss']):.4f} loss). Early stop.")
-            break
-
-    logging.info(f"Training completed after {ep_idx + 1} epochs.")
-
-    end_time = time.time()
-    running_time = end_time - start_time
     
-    with open(running_time_file, "a") as f:
-        f.write(f"training time: {round(running_time, 4)}s\n")
+    all_scores = []
+    all_times = []
+    global FEW_SHOT_DONE
+    global GLOBAL_STEPS
+    for seed in args.seeds:
+        args.seed = int(seed)
+        start_time = time.time()
+        # set random seeds
+        if args.seed is not None:
+            os.environ['PYTHONHASHSEED'] = str(args.seed)
+            random.seed(args.seed)
+            np.random.seed(args.seed)
+            torch.manual_seed(args.seed)
+            torch.random.manual_seed(args.seed)
+            torch.cuda.manual_seed(args.seed)
+            torch.cuda.manual_seed_all(args.seed)
+            torch.backends.cudnn.benchmark = False
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.enabled = False
+        
+        # TODO HuggingFace Datasets integration
+        train_sentences, train_labels, valid_sentences, valid_labels = get_dataset(args)
+
+        # setup data
+        train_data = LabelledDataset(inputs=train_sentences, labels=train_labels)
+        logging.info(f"Loaded {train_data} (train).")
+        valid_data = LabelledDataset(inputs=valid_sentences, labels=valid_labels)
+        logging.info(f"Loaded {valid_data} (dev).")
+        # gather labels
+        if set(train_data.get_label_types()) < set(valid_data.get_label_types()):
+            logging.warning(f"[Warning] Validation data contains labels unseen in the training data.")
+        label_types = sorted(set(train_data.get_label_types()) | set(valid_data.get_label_types()))
+
+        # load embedding model
+        embedding_model = TransformerEmbeddings(args.lm_name, cls=True, tokenized=(args.task == 'token_classification'), static=(not args.embedding_tuning), special_tokens=args.special_tokens)
+        logging.info(f"Loaded {embedding_model}.")
+
+        # load pooling function for sentence labeling tasks
+        pooling_function = None
+        if args.pooling is not None:
+            pooling_function = load_pooling_function(args.pooling)
+            logging.info(f"Applying pooling function '{args.pooling}' to token embeddings.")
+
+        # load classifier and loss constructors based on identifier
+        classifier_constructor, loss_constructor = load_classifier(args.classifier)
+
+        # setup classifier
+        classifier = classifier_constructor(
+                emb_model=embedding_model, emb_pooling=pooling_function, emb_tuning=args.embedding_tuning,
+                classes=label_types
+                )
+        logging.info(f"Using classifier:\n{classifier}")
+
+        # setup loss
+        criterion = loss_constructor(label_types)
+        logging.info(f"Using criterion {criterion}.")
+
+        # setup optimizer
+        optimizer = torch.optim.AdamW(params=classifier.get_trainable_parameters(), lr=args.learning_rate)
+        logging.info(f"Optimizing using {optimizer.__class__.__name__} with learning rate {args.learning_rate}.")
+
+        # main loop
+        stats = defaultdict(list)
+        main_metric = 'acc'
+        if args.dataset == 'cola':
+            main_metric = 'mcc'
+        for ep_idx in range(args.epochs):
+            # iterate over training batches and update classifier weights
+            ep_stats = run(
+                    classifier, criterion, optimizer, train_data, args.batch_size, mode='train', few_shot_steps=args.few_shot_steps
+                    )
+            # print statistics
+            logging.info(
+                    f"[Epoch {ep_idx + 1}/{args.epochs}] Train completed with "
+                    f"Acc: {ep_stats['acc']:.4f}, Mcc: {ep_stats['mcc']:.4f}, Loss: {ep_stats['loss']:.4f}"
+                    )
+
+            # iterate over batches in dev split
+            ep_stats = run(
+                    classifier, criterion, None, valid_data, args.batch_size, mode='eval'
+                    )
+
+            # store and print statistics
+            for stat in ep_stats:
+                stats[stat].append(ep_stats[stat])
+            logging.info(
+                    f"[Epoch {ep_idx + 1}/{args.epochs}] Validation completed with "
+                    f"Acc: {ep_stats['acc']:.4f}, Mcc: {ep_stats['mcc']:.4f}, Loss: {ep_stats['loss']:.4f}"
+                    )
+            cur_main_metric = stats[main_metric][-1]
+
+            # save best model
+            if args.few_shot_steps==0 and cur_main_metric >= max(stats[main_metric]):
+                path = os.path.join(args.exp_path, 'best.pt')
+                classifier.save(path)
+                logging.info(f"Saved model with best {main_metric} {cur_main_metric:.4f} to '{path}'.")
+
+            # check for early stopping
+            if (ep_idx - stats[main_metric].index(max(stats[main_metric]))) >= args.early_stop:
+                logging.info(f"No improvement since {args.early_stop} epochs ({max(stats[main_metric]):.4f} loss). Early stop.")
+                break
+            
+            # check for early stopping
+            
+            if FEW_SHOT_DONE:
+                break
+
+        logging.info(f"Training completed after {ep_idx + 1} epochs.")
+
+        end_time = time.time()
+
+        all_times.append(end_time - start_time)
+        all_scores.append(max(stats[main_metric]))
+
+        FEW_SHOT_DONE = False
+        GLOBAL_STEPS = 0
+
+        
+    results_file = f"{args.output_path}/model_selection_results/{args.method}-{args.few_shot_steps}_{args.pooling}.jsonl"
+    with jsonlines.open(results_file, 'a') as f:
+        f.write({
+            "model": args.lm_name,
+            "avg_score": np.mean(all_scores),
+            "avg_time": np.mean(all_times),
+            "all_scores": all_scores,
+            "all_times": all_times,
+        })
+
+    logging.info(f"{args.method}-{args.few_shot_steps}:")
+    logging.info(f"all scores: {all_scores}")
+    logging.info(f"all times: {all_times}")
+    logging.info(f"avg score: {np.mean(all_scores)}, avg time: {round(np.mean(all_times), 4)}s")
 
 
 if __name__ == '__main__':

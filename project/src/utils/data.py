@@ -1,9 +1,27 @@
 import csv
 import json
 import sys
-
+import random
 import numpy as np
 
+
+
+
+def sub_dataset_sampling(features, labels, sample_size, seed):
+    random.seed(seed)
+    num_classes = np.max(labels) + 1
+    sample_size = int(sample_size / num_classes)
+    sampled_features = []
+    sampled_labels = []
+    for i in range(num_classes):
+        cul_class_ids = np.where(labels==i)[0].tolist()
+        sampled_cul_class_ids = random.sample(cul_class_ids, sample_size)
+        sampled_features.append(features[sampled_cul_class_ids])
+        sampled_labels.append(labels[sampled_cul_class_ids])
+    sampled_features = np.concatenate(sampled_features, axis=0)
+    sampled_labels = np.concatenate(sampled_labels, axis=0)
+    print(f"sampling {sampled_features.shape[0]} samples uniformly over {num_classes} classes")
+    return sampled_features, sampled_labels
 
 #
 # LEEP Input Dataset
@@ -12,7 +30,7 @@ import numpy as np
 
 class LabelledDataset:
     def __init__(self, inputs, labels):
-        self._inputs = inputs  # List(List(Str)): [['t0', 't1', ...], ['t0', 't1', ...]] or List(Str): ['t0 t1 ... tN']
+        self._inputs = inputs  # List(List(Str)): [['t0', 't1', ...], ['t0', 't1', ...]] or List(Str): ['t0 t1 ... tN', ...]
         self._labels = labels  # List(List(Str)): [['l0', 'l1', ...], ['l0', 'l1', ...]] or List(Str): ['l0', 'l1', ...]
 
     def __len__(self):
@@ -42,7 +60,7 @@ class LabelledDataset:
             start_idx = cursor
             end_idx = min(start_idx + batch_size, len(self._inputs))
             cursor = end_idx
-            num_remaining = len(self._inputs) - cursor - 1
+            num_remaining = len(self._inputs) - cursor
             # slice data
             inputs = self._inputs[start_idx:end_idx]
             labels = self._labels[start_idx:end_idx]

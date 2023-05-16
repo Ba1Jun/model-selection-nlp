@@ -15,12 +15,5 @@ class Logistic(object):
             For regression, y has shape [N, C] with C regression-labels
         :return: TransRate score (how well f can fit y directly)
         """
-        # score = 0.
-        # seeds = [0, 42, 123, 1117, 12345]
-        # for seed in seeds:
-        #     print(f'logistic training: {seed}')
-        #     model = LogisticRegression(random_state=seed, multi_class='multinomial', solver='lbfgs').fit(train_features, train_labels)
-        #     score += (model.predict(val_features) == val_labels).mean()
-        # return score / len(seeds)
         model = LogisticRegression(random_state=self.args.seed, multi_class='multinomial', solver='lbfgs').fit(train_features, train_labels)
         return (model.predict(val_features) == val_labels).mean()

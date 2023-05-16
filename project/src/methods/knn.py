@@ -15,6 +15,6 @@ class kNN(object):
             For regression, y has shape [N, C] with C regression-labels
         :return: TransRate score (how well f can fit y directly)
         """
-
-        model = KNeighborsClassifier(n_neighbors=3).fit(train_features, train_labels)
+        K = int(self.args.method.split("-")[1])
+        model = KNeighborsClassifier(n_neighbors=K).fit(train_features, train_labels)
         return (model.predict(val_features) == val_labels).mean()

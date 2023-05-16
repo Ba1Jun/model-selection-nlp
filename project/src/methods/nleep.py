@@ -1,6 +1,8 @@
 import numpy as np
-from sklearn.mixture import GaussianMixture 
-from sklearn.decomposition import PCA
+from sklearn.mixture import GaussianMixture
+import sys
+sys.path.append('/home/baijun/workspace/project/model_selection_nlp/project/src/')
+from utils.data import sub_dataset_sampling
 
 
 class NLEEP(object):
@@ -9,21 +11,17 @@ class NLEEP(object):
 
     def score(self, X, y, component_ratio=5):
 
+        max_num_data = int(self.args.method.split("-")[1])
+        if X.shape[0] > max_num_data:
+            X, y = sub_dataset_sampling(X, y, max_num_data, self.args.seed)
+
         n = len(y)
         num_classes = len(np.unique(y))
-        # PCA: keep 80% energy
-        pca_80 = PCA(n_components=0.8)
-        pca_80.fit(X)
-        X_pca_80 = pca_80.transform(X)
-
-        print(f"After PCA transforming, the dimension is {X_pca_80.shape[1]}")
-
-        # X_pca_80 = X
 
         # GMM: n_components = component_ratio * class number
         n_components_num = component_ratio * num_classes
-        gmm = GaussianMixture(n_components=n_components_num, verbose=1, random_state=self.args.seed).fit(X_pca_80)
-        prob = gmm.predict_proba(X_pca_80)  # p(z|x)
+        gmm = GaussianMixture(n_components=n_components_num, verbose=1, random_state=self.args.seed).fit(X)
+        prob = gmm.predict_proba(X)  # p(z|x)
         
         # NLEEP
         pyz = np.zeros((num_classes, n_components_num))

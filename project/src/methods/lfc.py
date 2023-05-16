@@ -1,4 +1,7 @@
 import numpy as np
+import sys
+sys.path.append('/home/baijun/workspace/project/model_selection_nlp/project/src/')
+from utils.data import sub_dataset_sampling
 
 # code for the Label-Feature Correlation (LFC) score in A linearized framework and a new benchmark for model selection for fine-tuning
 
@@ -15,6 +18,9 @@ class LFC(object):
             For regression, y has shape [N, C] with C regression-labels
         :return: TransRate score (how well f can fit y directly)
         """
+        max_num_data = int(self.args.method.split("-")[1])
+        if f.shape[0] > max_num_data:
+            f, y = sub_dataset_sampling(f, y, max_num_data, self.args.seed)
         thetaF = np.dot(f, f.T)
         thetaF -= np.mean(thetaF)
         lsm = (y[:, None] == y[None, :]).astype(np.float32) * 2 - 1 # label similariy matrix

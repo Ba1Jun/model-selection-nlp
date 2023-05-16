@@ -6,30 +6,17 @@ import sys
 
 import numpy as np
 from scipy.special import softmax
-from sklearn.decomposition import PCA
 from typing import List, Tuple
 
 # local imports
 from project.src.utils.data import LabelledDataset
-from project.src.utils.embeddings import load_embeddings, load_pooling_function
+from project.src.utils.embeddings import load_embeddings, load_pooling_function, TransformerEmbeddings
 
 
 def encode_dataset(dataset: LabelledDataset, args: argparse.Namespace) -> Tuple[np.ndarray, np.ndarray]:
     # load embedding model
-    embedding_model = load_embeddings(
-        args.embedding_model,
-        tokenized=(args.task == 'token_classification'),
-        static=True
-    )
+    embedding_model = TransformerEmbeddings(args.lm_name, tokenized=(args.task == 'token_classification'), static=True)
     logging.info(f"Loaded {embedding_model}.")
-
-    # initialize PCA
-    pca_model = None
-    if args.pca_components > 0:
-        pca_model = PCA(n_components=args.pca_components, random_state=args.seed)
-        assert len(dataset) >= pca_model.n_components, \
-            f"[Error] Not enough data to perform PCA ({len(dataset)} < {pca_model.n_components})."
-        logging.info(f"Using PCA model with {pca_model.n_components} components.")
 
     # set pooling function for sentence labeling tasks
     if args.task == 'token_classification':
@@ -77,11 +64,5 @@ def encode_dataset(dataset: LabelledDataset, args: argparse.Namespace) -> Tuple[
     print("\r", end='')
 
     logging.info(f"Computed embeddings for {len(dataset)} items.")
-
-    # compute PCA
-    if pca_model is not None:
-        logging.info(f"Applying PCA to reduce embeddings to {pca_model.n_components} components...")
-        embeddings = pca_model.fit_transform(embeddings)
-        source_labels = [f'dim{d}' for d in range(pca_model.n_components)]
 
     return np.array(embeddings), np.array(labels)
