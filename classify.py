@@ -13,7 +13,7 @@ from collections import defaultdict
 from sklearn.metrics import accuracy_score, matthews_corrcoef
 
 from project.src.classification import load_classifier
-from project.src.utils.data import LabelledDataset
+from project.src.utils.data import LabelledDataset, sub_dataset_sampling
 from project.src.utils.embeddings import load_embeddings, load_pooling_function, TransformerEmbeddings
 # local imports
 from project.src.utils.load_data import get_dataset
@@ -34,42 +34,44 @@ def parse_arguments():
     arg_parser.add_argument('--train_path', help='path to training data')
     arg_parser.add_argument('--test_path', help='path to validation data')
     arg_parser.add_argument('--dataset', help='name of HuggingFace dataset')
+    arg_parser.add_argument('--max_length', type=int, default=512, help='maximum number of tokens in text.')
+    arg_parser.add_argument('--max_data_size', type=int, default=-1, help='maximum number of instances for model selection.')
     arg_parser.add_argument('--task', choices=['sequence_classification', 'token_classification'],
                             help='''Specify the type of task. Token classification requires pre-tokenized text and 
                             one label per token (both separated by space). Sequence classification requires pooling 
                             to reduce a sentence's token embeddings to one embedding per sentence.''')
-    arg_parser.add_argument('-st', '--special_tokens', nargs='*', help='special tokens list')
+    arg_parser.add_argument('--special_tokens', nargs='*', help='special tokens list')
     arg_parser.add_argument('--text_column', default='text', help='column containing input features')
     arg_parser.add_argument('--label_column', default='label', help='column containing gold labels')
 
     # embedding model setup
     arg_parser.add_argument('--lm_name', type=str, nargs='?', help='pretrained language model identifier')
     # arg_parser.add_argument('--embedding_model', required=True, help='embedding model identifier')
-    arg_parser.add_argument('-pl', '--pooling', help='pooling strategy for sentence classification (default: None)')
-    arg_parser.add_argument('-et', '--embedding_tuning', action='store_true', default=False,
+    arg_parser.add_argument('--pooling', help='pooling strategy for sentence classification (default: None)')
+    arg_parser.add_argument('--embedding_tuning', action='store_true', default=False,
                             help='set flag to tune the full model including embeddings (default: False)')
     
     # classifier setup
     arg_parser.add_argument('--classifier', required=True, help='classifier identifier')
-    arg_parser.add_argument('-po', '--prediction_only', action='store_true', default=False,
+    arg_parser.add_argument('--prediction_only', action='store_true', default=False,
                             help='set flag to run prediction on the validation data and exit (default: False)')
 
     # experiment setup
     arg_parser.add_argument('--method', type=str, nargs='?', help='Model selection method.')
     arg_parser.add_argument('--output_path', type=str, nargs='?', help='Path to the output files.')
-    arg_parser.add_argument('-e', '--epochs', type=int, default=50, help='maximum number of epochs (default: 50)')
-    arg_parser.add_argument('-es', '--early_stop', type=int, default=3,
+    arg_parser.add_argument('--epochs', type=int, default=50, help='maximum number of epochs (default: 50)')
+    arg_parser.add_argument('--early_stop', type=int, default=3,
                             help='maximum number of epochs without improvement (default: 3)')
-    arg_parser.add_argument('--few_shot_steps', type=int, default=0, help='maximum steps of few-shot training')
-    arg_parser.add_argument('-bs', '--batch_size', type=int, default=32,
+    arg_parser.add_argument('--early_stop_steps', type=int, default=0, help='maximum steps of few-shot training')
+    arg_parser.add_argument('--batch_size', type=int, default=32,
                             help='maximum number of sentences per batch (default: 32)')
-    arg_parser.add_argument('-lr', '--learning_rate', type=float, default=1e-3, help='learning rate (default: 1e-3)')
+    arg_parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate (default: 1e-3)')
     arg_parser.add_argument('--seeds', nargs='+', help='list of random seeds')
 
     return arg_parser.parse_args()
 
 
-def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', return_predictions=False, few_shot_steps=0):
+def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', return_predictions=False, early_stop_steps=0):
     stats = defaultdict(list)
 
     # set model to training mode
@@ -139,7 +141,7 @@ def run(classifier, criterion, optimizer, dataset, batch_size, mode='train', ret
                 )
         sys.stdout.flush()
 
-        if few_shot_steps != 0 and few_shot_steps == GLOBAL_STEPS:
+        if early_stop_steps != 0 and early_stop_steps == GLOBAL_STEPS:
             logging.info("")
             logging.info(f"Few-shot training completed at {GLOBAL_STEPS} steps.")
             FEW_SHOT_DONE = True
@@ -193,6 +195,7 @@ def main():
     all_times = []
     global FEW_SHOT_DONE
     global GLOBAL_STEPS
+    dataset_truncated = False
     for seed in args.seeds:
         args.seed = int(seed)
         start_time = time.time()
@@ -212,6 +215,12 @@ def main():
         # TODO HuggingFace Datasets integration
         train_sentences, train_labels, valid_sentences, valid_labels = get_dataset(args)
 
+
+        if args.max_data_size != -1 and len(train_sentences) > args.max_data_size:
+            train_sentences, train_labels = sub_dataset_sampling(np.array(train_sentences), np.array(train_labels), args.max_data_size, args.seed)
+            train_sentences, train_labels = train_sentences.tolist(), train_labels.tolist()
+            dataset_truncated = True
+
         # setup data
         train_data = LabelledDataset(inputs=train_sentences, labels=train_labels)
         logging.info(f"Loaded {train_data} (train).")
@@ -223,7 +232,7 @@ def main():
         label_types = sorted(set(train_data.get_label_types()) | set(valid_data.get_label_types()))
 
         # load embedding model
-        embedding_model = TransformerEmbeddings(args.lm_name, cls=True, tokenized=(args.task == 'token_classification'), static=(not args.embedding_tuning), special_tokens=args.special_tokens)
+        embedding_model = TransformerEmbeddings(args.lm_name, cls=True, tokenized=(args.task == 'token_classification'), static=(not args.embedding_tuning), special_tokens=args.special_tokens, max_length=args.max_length)
         logging.info(f"Loaded {embedding_model}.")
 
         # load pooling function for sentence labeling tasks
@@ -258,7 +267,7 @@ def main():
         for ep_idx in range(args.epochs):
             # iterate over training batches and update classifier weights
             ep_stats = run(
-                    classifier, criterion, optimizer, train_data, args.batch_size, mode='train', few_shot_steps=args.few_shot_steps
+                    classifier, criterion, optimizer, train_data, args.batch_size, mode='train', early_stop_steps=args.early_stop_steps
                     )
             # print statistics
             logging.info(
@@ -281,8 +290,11 @@ def main():
             cur_main_metric = stats[main_metric][-1]
 
             # save best model
-            if args.few_shot_steps==0 and cur_main_metric >= max(stats[main_metric]):
-                path = os.path.join(args.exp_path, 'best.pt')
+            if args.early_stop_steps==0 and cur_main_metric >= max(stats[main_metric]):
+                args.output_path = f"project/resources/output/glue/{args.dataset}/encoded_dataset/target-model_{args.lm_name.split('/')[-1]}_{args.pooling}"
+                if not os.path.exists(args.output_path):
+                    os.makedirs(args.output_path)
+                path = os.path.join(args.output_path, 'best.pt')
                 classifier.save(path)
                 logging.info(f"Saved model with best {main_metric} {cur_main_metric:.4f} to '{path}'.")
 
@@ -306,8 +318,10 @@ def main():
         FEW_SHOT_DONE = False
         GLOBAL_STEPS = 0
 
+
         
-    results_file = f"{args.output_path}/model_selection_results/{args.method}-{args.few_shot_steps}_{args.pooling}.jsonl"
+    results_file = f"{args.output_path}/{'model_selection_results' if args.early_stop_steps!=0 else ''}/{args.method}-{args.early_stop_steps if args.early_stop_steps!=0 else args.epochs}_{args.max_data_size if dataset_truncated else len(train_sentences)}_{embedding_model.emb_dim}_{args.pooling}.jsonl"
+    
     with jsonlines.open(results_file, 'a') as f:
         f.write({
             "model": args.lm_name,
@@ -317,7 +331,7 @@ def main():
             "all_times": all_times,
         })
 
-    logging.info(f"{args.method}-{args.few_shot_steps}:")
+    logging.info(f"{args.method}-{args.early_stop_steps if args.early_stop_steps!=0 else args.epochs}:")
     logging.info(f"all scores: {all_scores}")
     logging.info(f"all times: {all_times}")
     logging.info(f"avg score: {np.mean(all_scores)}, avg time: {round(np.mean(all_times), 4)}s")

@@ -140,14 +140,16 @@ class NonContextualEmbeddings(Embeddings):
 
 
 class TransformerEmbeddings(Embeddings):
-	def __init__(self, lm_name, layer=-1, cls=False, tokenized=False, static=True, special_tokens=None):
+	def __init__(self, lm_name, layer=-1, cls=False, tokenized=False, static=True, special_tokens=None, max_length=None):
 		super().__init__()
 		# load tokenizer
 		self._tok = transformers.AutoTokenizer.from_pretrained(lm_name, use_fast=True, add_prefix_space=True)
+		if max_length is not None:
+			self._tok.model_max_length = max_length
 		# load language model
 		self._lm = transformers.AutoModel.from_pretrained(lm_name, return_dict=True, cache_dir="/home/baijun/workspace/models")
 		# sanity check: some models do not have a maximum input length
-		if self._tok.model_max_length != self._lm.config.max_position_embeddings:
+		if max_length is None and self._tok.model_max_length != self._lm.config.max_position_embeddings:
 			max_length = self._lm.config.max_position_embeddings - 2  # 2 shorter for buffer (e.g. RoBERTa)
 			print(
 				f"[Warning] Maximum tokenizer input length does not match language model. "
@@ -190,7 +192,7 @@ class TransformerEmbeddings(Embeddings):
 		tok_sentences = self.tokenize(sentences)
 		model_inputs = {k: tok_sentences[k] for k in ['input_ids', 'token_type_ids', 'attention_mask'] if
 		                k in tok_sentences}
-
+		
 		# perform embedding forward pass
 		if self._static:
 			# do not compute gradients if model is used statically

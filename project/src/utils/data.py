@@ -1,26 +1,33 @@
 import csv
 import json
 import sys
+import math
 import random
 import numpy as np
-
-
 
 
 def sub_dataset_sampling(features, labels, sample_size, seed):
     random.seed(seed)
     num_classes = np.max(labels) + 1
-    sample_size = int(sample_size / num_classes)
+    sub_sample_sizes = []
     sampled_features = []
     sampled_labels = []
     for i in range(num_classes):
+        
+
         cul_class_ids = np.where(labels==i)[0].tolist()
-        sampled_cul_class_ids = random.sample(cul_class_ids, sample_size)
+        class_num_samples = len(cul_class_ids) * 1.
+        sub_sample_size = math.ceil((class_num_samples / len(labels)) * sample_size)
+        sub_sample_sizes.append(sub_sample_size)
+
+        # import pdb; pdb.set_trace()
+
+        sampled_cul_class_ids = random.sample(cul_class_ids, sub_sample_size)
         sampled_features.append(features[sampled_cul_class_ids])
         sampled_labels.append(labels[sampled_cul_class_ids])
     sampled_features = np.concatenate(sampled_features, axis=0)
     sampled_labels = np.concatenate(sampled_labels, axis=0)
-    print(f"sampling {sampled_features.shape[0]} samples uniformly over {num_classes} classes")
+    print(f"sampling {sampled_features.shape[0]} samples over {num_classes} classes: {sub_sample_sizes}")
     return sampled_features, sampled_labels
 
 #

@@ -1,8 +1,5 @@
 import numpy as np
 from sklearn.mixture import GaussianMixture
-import sys
-sys.path.append('/home/baijun/workspace/project/model_selection_nlp/project/src/')
-from utils.data import sub_dataset_sampling
 
 
 class NLEEP(object):
@@ -10,10 +7,17 @@ class NLEEP(object):
         self.args = args
 
     def score(self, X, y, component_ratio=5):
+        """
+        NLEEP score from https://github.com/TencentARC/SFDA/blob/main/metrics.py
 
-        max_num_data = int(self.args.method.split("-")[1])
-        if X.shape[0] > max_num_data:
-            X, y = sub_dataset_sampling(X, y, max_num_data, self.args.seed)
+        Args:
+            X (_type_): _description_
+            y (_type_): _description_
+            component_ratio (int, optional): _description_. Defaults to 5.
+
+        Returns:
+            _type_: _description_
+        """        
 
         n = len(y)
         num_classes = len(np.unique(y))

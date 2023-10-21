@@ -1,7 +1,4 @@
-import sys
 import numpy as np
-sys.path.append('/home/baijun/workspace/project/model_selection_nlp/project/src/')
-from utils.data import sub_dataset_sampling
 from sklearn.metrics import silhouette_score
 
 
@@ -17,7 +14,10 @@ class MSC(object):
             For regression, y has shape [N, C] with C regression-labels
         :return: TransRate score (how well f can fit y directly)
         """
-        # max_num_data = int(self.args.method.split("-")[1])
-        # if f.shape[0] > max_num_data:
-        #     f, y = sub_dataset_sampling(f, y, max_num_data, self.args.seed)
-        return silhouette_score(f, y, metric="cosine")
+        dist = str(self.args.method.split("-")[1])
+        if dist == "l2":
+            return silhouette_score(f, y, metric="l2")
+        elif dist == "cos":
+            return silhouette_score(f, y, metric="cosine")
+        elif dist == "corr":
+            return silhouette_score(f, y, metric="correlation")

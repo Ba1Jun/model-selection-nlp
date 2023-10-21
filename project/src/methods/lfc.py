@@ -1,7 +1,5 @@
 import numpy as np
-import sys
-sys.path.append('/home/baijun/workspace/project/model_selection_nlp/project/src/')
-from utils.data import sub_dataset_sampling
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 
 # code for the Label-Feature Correlation (LFC) score in A linearized framework and a new benchmark for model selection for fine-tuning
 
@@ -18,11 +16,17 @@ class LFC(object):
             For regression, y has shape [N, C] with C regression-labels
         :return: TransRate score (how well f can fit y directly)
         """
-        max_num_data = int(self.args.method.split("-")[1])
-        if f.shape[0] > max_num_data:
-            f, y = sub_dataset_sampling(f, y, max_num_data, self.args.seed)
-        thetaF = np.dot(f, f.T)
+        dist = str(self.args.method.split("-")[1])
+        if dist == "l2":
+            thetaF = -euclidean_distances(f)
+        elif dist == "dot":
+            thetaF = np.dot(f, f.T)
+        elif dist == "cos":
+            thetaF = cosine_similarity(f)
+        elif dist == "corr":
+            thetaF = np.corrcoef(f)
         thetaF -= np.mean(thetaF)
         lsm = (y[:, None] == y[None, :]).astype(np.float32) * 2 - 1 # label similariy matrix
         lsm -= np.mean(lsm)
-        return np.sum(thetaF * lsm) / (np.linalg.norm(thetaF, ord=2) * np.linalg.norm(lsm, ord=2))
+        score = cosine_similarity(thetaF.reshape(1, -1), lsm.reshape(1, -1)).item()
+        return score

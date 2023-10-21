@@ -16,5 +16,11 @@ class kNN(object):
         :return: TransRate score (how well f can fit y directly)
         """
         K = int(self.args.method.split("-")[1])
-        model = KNeighborsClassifier(n_neighbors=K).fit(train_features, train_labels)
+        dist = str(self.args.method.split("-")[2])
+        if dist == "l2":
+            model = KNeighborsClassifier(n_neighbors=K).fit(train_features, train_labels)
+        elif dist == "cos":
+            model = KNeighborsClassifier(n_neighbors=K, metric="cosine").fit(train_features, train_labels)
+        elif dist == "corr":
+            model = KNeighborsClassifier(n_neighbors=K, metric="correlation").fit(train_features, train_labels)
         return (model.predict(val_features) == val_labels).mean()

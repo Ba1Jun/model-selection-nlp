@@ -1,0 +1,6 @@
+{"model": "bert-base-uncased", "avg_score": -0.41900826514533135, "avg_time": 1.8434805870056152, "all_scores": [-0.41900826514533135], "all_times": [1.8434805870056152]}
+{"model": "distilbert-base-uncased", "avg_score": -0.5126017403570898, "avg_time": 1.8748695850372314, "all_scores": [-0.5126017403570898], "all_times": [1.8748695850372314]}
+{"model": "bert-base-cased", "avg_score": -0.3918338913748668, "avg_time": 1.8659086227416992, "all_scores": [-0.3918338913748668], "all_times": [1.8659086227416992]}
+{"model": "distilbert-base-cased", "avg_score": -0.37890682333290293, "avg_time": 1.8121237754821777, "all_scores": [-0.37890682333290293], "all_times": [1.8121237754821777]}
+{"model": "roberta-base", "avg_score": -0.40560914853268504, "avg_time": 1.8804306983947754, "all_scores": [-0.40560914853268504], "all_times": [1.8804306983947754]}
+{"model": "distilroberta-base", "avg_score": -0.5378320965485469, "avg_time": 1.8351774215698242, "all_scores": [-0.5378320965485469], "all_times": [1.8351774215698242]}

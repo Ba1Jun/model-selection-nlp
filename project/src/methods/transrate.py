@@ -1,7 +1,6 @@
 import warnings
 
 import numpy as np
-from numba import njit
 
 # copy from https://proceedings.mlr.press/v162/huang22d/huang22d.pdf
 

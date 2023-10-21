@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 import argparse
 import logging
-import os
+import torch
 import sys
 
 import numpy as np
@@ -13,10 +13,16 @@ from project.src.utils.data import LabelledDataset
 from project.src.utils.embeddings import load_embeddings, load_pooling_function, TransformerEmbeddings
 
 
-def encode_dataset(dataset: LabelledDataset, args: argparse.Namespace) -> Tuple[np.ndarray, np.ndarray]:
+def encode_dataset(dataset: LabelledDataset, args: argparse.Namespace, load_target_model=False) -> Tuple[np.ndarray, np.ndarray]:
     # load embedding model
-    embedding_model = TransformerEmbeddings(args.lm_name, tokenized=(args.task == 'token_classification'), static=True)
-    logging.info(f"Loaded {embedding_model}.")
+    if load_target_model:
+        embedding_model = torch.load(f"{args.output_path}/encoded_dataset/target-model_{args.target_model_lm_name}_{args.pooling}/best.pt")._emb
+        embedding_model._lm.eval()
+        embedding_model._static = True
+        logging.info(f"Loaded target model {embedding_model}.")
+    else:
+        embedding_model = TransformerEmbeddings(args.lm_name, tokenized=(args.task == 'token_classification'), static=True)
+        logging.info(f"Loaded {embedding_model}.")
 
     # set pooling function for sentence labeling tasks
     if args.task == 'token_classification':

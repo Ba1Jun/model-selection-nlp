@@ -160,6 +160,7 @@ class SFDA(object):
 
     def score(self, X: np.ndarray, y: np.ndarray):
         """
+        SFDA score from https://github.com/TencentARC/SFDA/blob/main/metrics.py
         :param f: [N, F], feature matrix from pre-trained model
         :param y: target labels.
             For classification, y has shape [N] with element in [0, C_t).
